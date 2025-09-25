@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  student-management-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - BUILD_ENV=production
+    image: student-management-api:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - SERVER_PORT=8080
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/config/firebase-service-account.json
+      - JVM_OPTS=-Xmx512m -Xms256m -XX:+UseG1GC
+    volumes:
+      - ./src/main/resources/firebase-service-account.json:/app/config/firebase-service-account.json:ro
+      - app-logs:/app/logs
+      - app-data:/app/data
+    networks:
+      - student-management-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    labels:
+      - "app=student-management-api"
+      - "environment=production"
+      - "version=1.0"
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # Optional: Add a reverse proxy for production
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - student-management-api
+    networks:
+      - student-management-network
+    restart: unless-stopped
+    labels:
+      - "app=nginx-proxy"
+      - "environment=production"
+
+networks:
+  student-management-network:
+    driver: bridge
+    name: student-management-prod-net
+
+volumes:
+  app-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./logs
+  app-data:
+    driver: local
